@@ -273,7 +273,7 @@ class Passaro:
         self.tamanho = TAMANHO_PASSARO
         self.eh_rapido = random.random() < 0.3
         
-        # Ajuste de velocidade conforme solicitado
+        # Ajuste de velocidade 
         if self.eh_rapido:
             self.velocidade = VELOCIDADE_NORMAL_MULTIPLIER * VELOCIDADE_RAPIDO_MULTIPLIER
         else:
