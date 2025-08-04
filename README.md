@@ -48,7 +48,7 @@ VELOCIDADE_NUVEM_FATOR = 0.2
 def carregar_som(nome_arquivo):
     """Carrega um arquivo de som, retornando um som vazio em caso de erro."""
     try:
-        # Aparentemente, o caminho base pode estar errado, vamos usar um caminho relativo e depois absoluto
+        # usando caminho absoluto
         caminho_base = os.path.dirname(__file__)
         caminho = os.path.join(caminho_base, "Assets", nome_arquivo)
         if not os.path.exists(caminho):
@@ -121,9 +121,6 @@ frames_pulo = carregar_animacao("sheep/jump", 8, 1.5)
 frames_morte = carregar_animacao("sheep/death", 8, 1.5)
 frames_passaro = carregar_animacao("Bird/fly", 6, 1.0, True)
 
-# A verificação de fallback foi movida para a função carregar_animacao,
-# então não é mais necessária aqui.
-# if not frames_correndo: ...
 
 # Carregar sons
 sons = {
@@ -187,7 +184,6 @@ class Ovelha:
         
         # Atualizar animação
         self.temporizador_animacao += dt
-        # Corrigido: Verifique se a lista de animação não está vazia antes de usar len()
         if self.animacao_atual and self.temporizador_animacao >= ATRASO_ANIMACAO:
             self.temporizador_animacao = 0
             if not self.esta_morta or not self.animacao_morte_completa:
@@ -216,7 +212,6 @@ class Ovelha:
     
     def desenhar(self, superficie):
         """Desenha o jogador na tela."""
-        # Corrigido: Acessa o frame apenas se a lista de animação não estiver vazia.
         if self.animacao_atual:
             frame_idx = min(self.frame_atual, len(self.animacao_atual) - 1)
             frame = self.animacao_atual[frame_idx]
@@ -266,3 +261,297 @@ class Nuvem:
         self.tamanho = random.uniform(0.5, 1.2)
         self.largura = int(LARGURA_TELA * 0.15 * self.tamanho)
         self.altura = int(ALTURA_TELA * 0.1 * self.tamanho)
+    
+    def atualizar(self, velocidade_jogo):
+        """Atualiza a posição da nuvem, acelerando com o jogo."""
+        self.x -= velocidade_jogo * VELOCIDADE_NUVEM_FATOR
+        if self.x < -self.largura:
+            self.resetar()
+    
+    def desenhar(self, superficie):
+        """Desenha a nuvem na tela."""
+        if img_nuvem and img_nuvem.get_size() != (1,1):
+            nuvem_redimensionada = pygame.transform.scale(img_nuvem, (self.largura, self.altura))
+            superficie.blit(nuvem_redimensionada, (self.x, self.y))
+        else:
+            pygame.draw.ellipse(superficie, BRANCO_NUVEM, (self.x, self.y, self.largura, self.altura))
+
+class Passaro:
+    """Representa o pássaro, um obstáculo voador."""
+    def __init__(self, x, y_ovelha):
+        self.x = x
+        self.frames = frames_passaro
+        self.frame_atual = 0
+        self.temporizador_animacao = 0
+        self.tamanho = TAMANHO_PASSARO
+        self.eh_rapido = random.random() < 0.3
+        
+        # Ajuste de velocidade conforme solicitado
+        if self.eh_rapido:
+            self.velocidade = VELOCIDADE_NORMAL_MULTIPLIER * VELOCIDADE_RAPIDO_MULTIPLIER
+        else:
+            self.velocidade = VELOCIDADE_NORMAL_MULTIPLIER
+        
+        self.y = Y_CHAO - self.tamanho - 50 if random.random() < 0.5 else y_ovelha - ALTURA_TELA * DESLOCAMENTO_ALTURA_PASSARO
+        self.y = max(ALTURA_TELA * 0.1, min(Y_CHAO - self.tamanho, self.y))
+        
+        # Adicionado: Cria um retângulo para colisão, mesmo que o desenho falhe
+        self.retangulo = pygame.Rect(self.x, self.y, self.tamanho, self.tamanho)
+
+    def atualizar(self, velocidade_jogo, x_ovelha, y_ovelha, dt):
+        """Atualiza a posição e animação do pássaro."""
+        self.temporizador_animacao += dt
+        if self.temporizador_animacao >= ATRASO_ANIMACAO_PASSARO:
+            self.temporizador_animacao = 0
+            self.frame_atual = (self.frame_atual + 1) % len(self.frames)
+        
+        self.x -= velocidade_jogo * self.velocidade
+        
+        dx, dy = x_ovelha - self.x, y_ovelha - self.y
+        dist = max(1, math.sqrt(dx*dx + dy*dy))
+        self.x += dx/dist * FATOR_PERSEGUICAO
+        self.y += dy/dist * FATOR_PERSEGUICAO
+        self.y = max(ALTURA_TELA * 0.1, min(Y_CHAO - self.tamanho, self.y))
+        
+        self.retangulo.left = self.x
+        self.retangulo.top = self.y
+        
+        return self.x < -self.tamanho
+    
+    def desenhar(self, superficie):
+        """Desenha o pássaro na tela."""
+        if self.frames:
+            frame = self.frames[self.frame_atual % len(self.frames)]
+            superficie.blit(frame, (self.x, self.y))
+        else:
+            pygame.draw.circle(superficie, PRETO, (int(self.x + self.tamanho/2), int(self.y + self.tamanho/2)), self.tamanho // 2)
+
+
+class Pedra:
+    """Representa a pedra, um obstáculo no chão."""
+    def __init__(self, x):
+        self.x = x
+        self.imagem = random.choice([img_pedra1, img_pedra2])
+        if not self.imagem or self.imagem.get_size() == (1,1):
+            self.imagem = pygame.Surface((TAMANHO_PEDRA * 2, TAMANHO_PEDRA * 2))
+            pygame.draw.rect(self.imagem, (100, 100, 100), (0, 0, TAMANHO_PEDRA * 2, TAMANHO_PEDRA * 2))
+        
+        self.retangulo = self.imagem.get_rect()
+        self.retangulo.bottom = Y_CHAO
+        self.retangulo.left = x
+        self.tamanho = self.retangulo.width
+    
+    def atualizar(self, velocidade_jogo):
+        """Atualiza a posição da pedra."""
+        self.x -= velocidade_jogo
+        self.retangulo.left = self.x
+        return self.x < -self.tamanho
+    
+    def desenhar(self, superficie):
+        """Desenha a pedra na tela."""
+        superficie.blit(self.imagem, self.retangulo)
+
+def mostrar_texto(superficie, texto, tamanho, cor, x, y, alinhamento="centro"):
+    """Exibe um texto na tela com alinhamento flexível."""
+    fonte = pygame.font.SysFont(None, tamanho)
+    superficie_texto = fonte.render(texto, True, cor)
+    retangulo_texto = superficie_texto.get_rect()
+    if alinhamento == "centro":
+        retangulo_texto.center = (x, y)
+    elif alinhamento == "esquerda":
+        retangulo_texto.midleft = (x, y)
+    superficie.blit(superficie_texto, retangulo_texto)
+
+def menu_inicial(recorde):
+    """Tela de introdução do jogo."""
+    pygame.mixer.stop()
+    if sons['menu']:
+        sons['menu'].play(-1)
+    
+    while True:
+        tela.fill(AZUL_CEU)
+        
+        centro_x = LARGURA_TELA // 2
+        y_titulo = ALTURA_TELA // 3
+        y_iniciar = ALTURA_TELA // 2
+        y_recorde = ALTURA_TELA // 1.5
+        
+        mostrar_texto(tela, "Sheep Runner", int(ALTURA_TELA * 0.08), PRETO, centro_x, y_titulo)
+        mostrar_texto(tela, "Toque para Iniciar", int(ALTURA_TELA * 0.04), PRETO, centro_x, y_iniciar)
+        mostrar_texto(tela, f"Recorde: {recorde:.2f}", int(ALTURA_TELA * 0.03), PRETO, centro_x, y_recorde)
+        
+        pygame.display.update()
+        
+        for evento in pygame.event.get():
+            if evento.type == pygame.QUIT or (evento.type == pygame.KEYDOWN and evento.key == pygame.K_ESCAPE):
+                pygame.quit()
+                sys.exit()
+            if evento.type == pygame.MOUSEBUTTONDOWN:
+                if sons['menu']:
+                    sons['menu'].stop()
+                return
+
+def tela_fim_de_jogo(pontuacao, recorde, novo_recorde):
+    """Tela de Game Over."""
+    pygame.mixer.stop()
+    
+    sobreposicao = pygame.Surface((LARGURA_TELA, ALTURA_TELA))
+    sobreposicao.set_alpha(180)
+    sobreposicao.fill(PRETO)
+    tela.blit(sobreposicao, (0, 0))
+    
+    centro_x = LARGURA_TELA // 2
+    
+    mostrar_texto(tela, "Fim de Jogo", int(ALTURA_TELA * 0.06), BRANCO, centro_x, ALTURA_TELA//3)
+    mostrar_texto(tela, f"Pontuação: {pontuacao:.2f}", int(ALTURA_TELA * 0.05), BRANCO, centro_x, ALTURA_TELA//2)
+    
+    y_mensagem = ALTURA_TELA//2 + int(ALTURA_TELA * 0.08)
+    if novo_recorde:
+        mostrar_texto(tela, "PARABÉNS! NOVO RECORDE!", int(ALTURA_TELA * 0.05), OURO, centro_x, y_mensagem)
+        if sons['recorde']:
+            sons['recorde'].play()
+    else:
+        mostrar_texto(tela, "Você não ultrapassou seu recorde", int(ALTURA_TELA * 0.035), BRANCO, centro_x, y_mensagem)
+        mostrar_texto(tela, "Você consegue! Tente de novo!", int(ALTURA_TELA * 0.035), BRANCO, centro_x, y_mensagem + int(ALTURA_TELA * 0.05))
+        if sons['falha']:
+            sons['falha'].play()
+    
+    mostrar_texto(tela, "Toque para continuar", int(ALTURA_TELA * 0.03), BRANCO, centro_x, ALTURA_TELA * 0.7)
+    
+    pygame.display.update()
+    
+    esperando = True
+    while esperando:
+        for evento in pygame.event.get():
+            if evento.type == pygame.QUIT or (evento.type == pygame.KEYDOWN and evento.key == pygame.K_ESCAPE):
+                pygame.quit()
+                sys.exit()
+            if evento.type == pygame.MOUSEBUTTONDOWN:
+                esperando = False
+        
+        pygame.time.Clock().tick(60)
+
+def main():
+    """Função principal do jogo."""
+    relogio = pygame.time.Clock()
+    recorde = 0
+    
+    while True:
+        menu_inicial(recorde)
+        
+        ovelha = Ovelha()
+        chao = Chao()
+        nuvens = [Nuvem() for _ in range(3)]
+        obstaculos = []
+        pontuacao = 0
+        velocidade_jogo = VELOCIDADE_JOGO
+        ultima_geracao_obstaculo = pygame.time.get_ticks()
+        temporizador_piscar = 0
+        novo_recorde = False
+        
+        def gerar_grupo_obstaculo():
+            """Gera um grupo de obstáculos aleatório."""
+            grupo = []
+            combo = random.choice(["duas_pedras", "dois_passaros", "misto"])
+            
+            x = LARGURA_TELA
+            if combo == "duas_pedras":
+                grupo.append(Pedra(x))
+                grupo.append(Pedra(x + DISTANCIA_INTERNA_GRUPO))
+            elif combo == "dois_passaros":
+                grupo.append(Passaro(x, ovelha.y))
+                grupo.append(Passaro(x + DISTANCIA_INTERNA_GRUPO, ovelha.y))
+            else:
+                tipos = random.choice([['pedra', 'passaro'], ['passaro', 'pedra']])
+                for i, tipo_obs in enumerate(tipos):
+                    if tipo_obs == 'passaro':
+                        grupo.append(Passaro(x + i * DISTANCIA_INTERNA_GRUPO, ovelha.y))
+                    else:
+                        grupo.append(Pedra(x + i * DISTANCIA_INTERNA_GRUPO))
+            return grupo
+
+        rodando = True
+        while rodando:
+            dt = relogio.tick(60)
+            
+            for evento in pygame.event.get():
+                if evento.type == pygame.QUIT or (evento.type == pygame.KEYDOWN and evento.key == pygame.K_ESCAPE):
+                    pygame.quit()
+                    sys.exit()
+                if evento.type == pygame.MOUSEBUTTONDOWN and not ovelha.esta_morta:
+                    ovelha.pular()
+            
+            if ovelha.atualizar():
+                rodando = False
+                
+            if not ovelha.esta_morta:
+                pontuacao += 0.1
+                velocidade_jogo += INCREMENTO_VELOCIDADE
+                
+                if pontuacao > recorde and not novo_recorde:
+                    novo_recorde = True
+                    temporizador_piscar = DURACAO_PISCAR
+                    if sons['pontuacao']:
+                        sons['pontuacao'].play()
+                
+                tempo_atual = pygame.time.get_ticks()
+                if not obstaculos and tempo_atual - ultima_geracao_obstaculo > max(500, 1500 - min(1000, pontuacao)):
+                    obstaculos.extend(gerar_grupo_obstaculo())
+                    ultima_geracao_obstaculo = tempo_atual
+            
+            for nuvem in nuvens:
+                nuvem.atualizar(velocidade_jogo)
+            
+            for obstaculo in obstaculos[:]:
+                if (isinstance(obstaculo, Passaro) and obstaculo.atualizar(velocidade_jogo, ovelha.x, ovelha.y, dt)) or \
+                   (isinstance(obstaculo, Pedra) and obstaculo.atualizar(velocidade_jogo)):
+                    obstaculos.remove(obstaculo)
+            
+            # Corrigido: Verificação de colisão mais segura
+            if not ovelha.esta_morta and ovelha.animacao_atual:
+                frame_idx = min(ovelha.frame_atual, len(ovelha.animacao_atual) - 1)
+                frame = ovelha.animacao_atual[frame_idx]
+                retangulo_ovelha = frame.get_rect(midbottom=(ovelha.x, ovelha.y + ovelha.raio))
+                
+                for obstaculo in obstaculos:
+                    # Melhoramos a detecção de colisão para passáros, usando o retângulo criado
+                    retangulo_obstaculo = obstaculo.retangulo if isinstance(obstaculo, Pedra) else obstaculo.retangulo
+                    if retangulo_ovelha.colliderect(retangulo_obstaculo):
+                        ovelha.iniciar_morte()
+                        break
+            
+            tela.fill(AZUL_CEU)
+            
+            for nuvem in nuvens:
+                nuvem.desenhar(tela)
+            
+            chao.atualizar(velocidade_jogo)
+            chao.desenhar(tela)
+            
+            texto_pontuacao = f"Pontuação: {pontuacao:.2f}"
+            tamanho_pontuacao = int(ALTURA_TELA * 0.04)
+            x_pontuacao = 20
+            y_pontuacao = ALTURA_TELA // 2
+            
+            if temporizador_piscar > 0:
+                temporizador_piscar -= 1
+                if (temporizador_piscar // 10) % 2 == 0:
+                    mostrar_texto(tela, texto_pontuacao, tamanho_pontuacao, OURO, x_pontuacao, y_pontuacao, "esquerda")
+                else:
+                    mostrar_texto(tela, texto_pontuacao, tamanho_pontuacao, BRANCO, x_pontuacao, y_pontuacao, "esquerda")
+            else:
+                mostrar_texto(tela, texto_pontuacao, tamanho_pontuacao, BRANCO, x_pontuacao, y_pontuacao, "esquerda")
+            
+            ovelha.desenhar(tela)
+            for obstaculo in obstaculos:
+                obstaculo.desenhar(tela)
+            
+            pygame.display.update()
+        
+        if pontuacao > recorde:
+            recorde = pontuacao
+        
+        tela_fim_de_jogo(pontuacao, recorde, novo_recorde)
+
+if __name__ == "__main__":
+    main()
